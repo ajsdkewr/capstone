@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 #include <DFRobotDFPlayerMini.h>
+#include <SoftwareSerial.h> // 이산화탄소 센서 라이브러리
+#include <MHZ19.h> // MH-Z19 라이브러리
+
 
 // 핀 정의
 const int blueLEDPin = 10;
@@ -64,8 +67,10 @@ void setup() {
 }
 
 void loop() {
+  # 라즈베리에서 신호를 받으면 아래 if 작동
   if (Serial.available() > 0) {
     char command = Serial.read();
+    # 받은 신호가 'y'이면 안내 음성과 counter가 1로 바뀜
     if (command == 'y') {
       MP3Player.play(2);
       counter++;
@@ -73,11 +78,23 @@ void loop() {
       }
     }
 
+  # counter가 1이 된 순간부터 이 코드만 반복
   if (counter > 0) {
     executeMission();
   }
+
+  #이산화탄소 데이터를 정상적으로 받으면 아래 if 문 실행
+  MHZ19_RESULT response = mhz.retrieveData();
+  if (response == MHZ19_RESULT_OK)
+  {
+    int co2 = mhz.getCO2(); // 이산화탄소 농도 측정
+    # co2 농도가 3000이상 일때만 라즈베리파이에 신호 전송 
+    if (co2 > 3000) {
+      Serial.print("c");
+  }}
 }
 
+# 미션 코드를 executeMission 함수로 묶음
 void executeMission() {
   unsigned long currentTime = millis();
 
@@ -135,6 +152,7 @@ void executeMission() {
   }
 }
 
+// 미션 시작 함수 설정정
 void startMission() {
   // 무작위로 LED 선택
   bool lightBlue = random(2) > 0; // 0 또는 1을 무작위로 반환
@@ -153,6 +171,7 @@ void startMission() {
   }
 }
 
+# 미션 진행 상황 확인 함수수
 void checkMission(unsigned long currentTime) {
   // 미션 시간이 만료되었는지 확인
   if (currentTime - missionStartTime > missionDuration) {
