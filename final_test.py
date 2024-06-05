@@ -145,6 +145,18 @@ while True:
                         COUNTER += 1 
                         print("NORMAL_VALUE READY!")
                         
+            # 아두이노에서 신호를 받으면 아래 코드 실행
+            # 만약 아두이노에서 보낸 신호가 "n"이면 졸음 감지 기준 강화
+            if arduino.in_waiting > 0:
+                data = arduino.readline().decode('utf-8').strip()
+                 if data == "n":
+                     EYE_AR_THRESH = 0.25
+                     EYE_AR_CONSEC_FRAMES = 24
+                     MOUTH_AR_THRESH = 1.8
+                     MOUTH_AR_CONSEC_FRAMES = 8
+                     HEAD_AR_THRESH = 1.4
+                     HEAD_AR_CONSEC_FRAMES = 8
+                        
         # else 문은 drown = 0에 대한 else 문으로 졸음이 감지되었을 때만 시작
         else:
             # 카메라 창에 "IN MISSION"이라는 표시를 나오게 함
