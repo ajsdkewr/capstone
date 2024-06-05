@@ -1,0 +1,216 @@
+#include <Arduino.h>
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+
+// 핀 정의
+const int blueLEDPin = 10;
+const int redLEDPin = 9;
+const int pressureSensor1Pin = A1;
+const int pressureSensor2Pin = A0;
+const int bluePiezoPin = 6; // 첫 번째 피에조 스피커 핀
+const int redPiezoPin = 7; // 두 번째 피에조 스피커 핀
+
+// 시간 상수
+const unsigned long missionDuration = 1000; // 미션 시간: 1초
+const unsigned long cycleTime = 2000; // 미션 주기: 2초
+const unsigned long minLEDOnDelay = 500; // LED가 켜지기 전 최소 지연시간: 0.5초
+const unsigned long maxLEDOnDelay = 1500; // LED가 켜지기 전 최대 지연시간: 1.5초
+const unsigned long initialDelay = 5000; // 초기 지연 시간: 5초
+const int toneFrequency = 1000; // 소리 주파수 (Hz)
+
+unsigned long lastUpdateTime = 0;
+unsigned long nextLEDOnTime = 0;
+unsigned long missionStartTime = 0;
+bool ledIsOn = false;
+bool missionInProgress = false;
+bool missionStarted = false; // 미션 시작 플래그
+bool realMissionComplete = false; // 실제 미션 완료 플래그
+bool initialDelayPassed = false; // 초기 지연 시간 경과 여부
+int consecutiveSuccessCount = 0; // 연속된 성공 횟수
+int consecutiveFailCount = 0; // 연속된 실패 횟수
+int counter = 0;
+
+SoftwareSerial MP3Module(2, 3);
+DFRobotDFPlayerMini MP3Player;
+
+void setup() {
+  // 시리얼 모니터 초기화
+  Serial.begin(9600);
+
+  // MP3 모듈 초기화
+  MP3Module.begin(9600);
+  if (!MP3Player.begin(MP3Module)) { // MP3 모듈을 초기화합니다. 초기화에 실패하면 오류를 발생시킵니다.
+    Serial.println(F("Unable to begin:"));
+    Serial.println(F("1.Please recheck the connection!"));
+    Serial.println(F("2.Please insert the SD card!"));
+    while (true);
+  }
+  delay(1);
+  MP3Player.volume(15);  // 볼륨을 조절합니다. 0~30까지 설정이 가능합니다.
+
+  // LED 핀을 출력으로 설정
+  pinMode(blueLEDPin, OUTPUT);
+  pinMode(redLEDPin, OUTPUT);
+  pinMode(bluePiezoPin, OUTPUT); // 피에조 스피커 핀을 출력으로 설정
+  pinMode(redPiezoPin, OUTPUT); // 피에조 스피커 핀을 출력으로 설정
+
+  // 초기에는 LED 끄기
+  digitalWrite(blueLEDPin, LOW);
+  digitalWrite(redLEDPin, LOW);
+  noTone(bluePiezoPin); // 피에조 스피커 소리 끄기
+  noTone(redPiezoPin); // 피에조 스피커 소리 끄기
+
+  missionStartTime = millis(); // 현재 시간 저장
+}
+
+void loop() {
+  if (Serial.available() > 0) {
+    char command = Serial.read();
+    if (command == 'y') {
+      MP3Player.play(2);
+      counter++;
+      delay(3000);
+      }
+    }
+
+  if (counter > 0) {
+    executeMission();
+  }
+}
+
+void executeMission() {
+  unsigned long currentTime = millis();
+
+  // 초기 지연 시간이 지나지 않았으면 대기
+  if (!initialDelayPassed) {
+    if (currentTime - missionStartTime >= initialDelay) {
+      initialDelayPassed = true; // 초기 지연 시간 경과 플래그 설정
+      lastUpdateTime = currentTime; // 미션 주기 타이머 초기화
+      Serial.println("Initial delay passed"); // 로그 추가
+    } else {
+      Serial.println("Waiting for initial delay"); // 로그 추가
+      return; // 초기 지연 시간 동안 아무 작업도 하지 않음
+    }
+  }
+
+  // 실제 미션이 완료된 경우, 모든 미션을 종료
+  if (realMissionComplete) {
+    MP3Player.play(1);
+    Serial.println("Real mission complete"); // 로그 추가
+    lastUpdateTime = 0;
+    nextLEDOnTime = 0;
+    missionStartTime = millis();
+    ledIsOn = false;
+    missionInProgress = false;
+    missionStarted = false; // 미션 시작 플래그
+    realMissionComplete = false; // 실제 미션 완료 플래그
+    initialDelayPassed = false; // 초기 지연 시간 경과 여부
+    consecutiveSuccessCount = 0; // 연속된 성공 횟수
+    consecutiveFailCount = 0; // 연속된 실패 횟수
+    counter = 0;
+    return;
+  }
+
+  // 새로운 미션 주기를 시작할 시간인지 확인
+  if (currentTime - lastUpdateTime >= cycleTime) {
+    lastUpdateTime = currentTime;
+    missionInProgress = true;
+    ledIsOn = false;
+    missionStarted = true; // 미션이 시작되었음을 표시
+    Serial.println("Starting new mission cycle"); // 로그 추가
+    // LED를 0.5초에서 1.5초 사이의 무작위 지연 시간 후에 켜도록 예약
+    nextLEDOnTime = currentTime + random(minLEDOnDelay, maxLEDOnDelay + 1);
+  }
+
+  // 미션 중 예약된 시간에 LED를 켜기
+  if (missionInProgress && !ledIsOn && currentTime >= nextLEDOnTime) {
+    startMission();
+    ledIsOn = true;
+    missionStartTime = currentTime; // 센서를 누르는 시간을 초기화
+  }
+
+  // 미션과 LED가 활성화된 경우 센서 입력 처리
+  if (missionInProgress && ledIsOn) {
+    checkMission(currentTime);
+  }
+}
+
+void startMission() {
+  // 무작위로 LED 선택
+  bool lightBlue = random(2) > 0; // 0 또는 1을 무작위로 반환
+  Serial.println("Starting mission"); // 로그 추가
+
+  if (lightBlue) {
+    digitalWrite(blueLEDPin, HIGH);
+    digitalWrite(redLEDPin, LOW);
+    tone(bluePiezoPin, toneFrequency); // 첫 번째 피에조 스피커 소리 내기
+    noTone(redPiezoPin); // 두 번째 피에조 스피커 소리 끄기
+  } else {
+    digitalWrite(redLEDPin, HIGH);
+    digitalWrite(blueLEDPin, LOW);
+    tone(redPiezoPin, toneFrequency); // 두 번째 피에조 스피커 소리 내기
+    noTone(bluePiezoPin); // 첫 번째 피에조 스피커 소리 끄기
+  }
+}
+
+void checkMission(unsigned long currentTime) {
+  // 미션 시간이 만료되었는지 확인
+  if (currentTime - missionStartTime > missionDuration) {
+    Serial.println("Mission Failed");
+    missionInProgress = false;
+    digitalWrite(blueLEDPin, LOW);
+    digitalWrite(redLEDPin, LOW);
+    noTone(bluePiezoPin); // 피에조 스피커 소리 끄기
+    noTone(redPiezoPin); // 피에조 스피커 소리 끄기
+    consecutiveFailCount++;
+    if (consecutiveFailCount >= 3) { // 3회 이상의 연속 실패가 발생한 경우
+      Serial.println("Real Mission Failed");
+      consecutiveFailCount = 0; // 연속 실패 횟수 초기화
+      blinkLED(redLEDPin); // 빨간 LED 깜빡이기
+    }
+    Serial.println("MISSION END"); // 미션 종료 신호 전송
+    consecutiveSuccessCount = 0; // 연속 성공 횟수 초기화
+    return;
+  }
+
+  // 켜진 LED에 따라 센서 상태 확인
+  if (digitalRead(blueLEDPin) == HIGH) {
+    if (analogRead(pressureSensor2Pin) > 200) { // 압력 센서 임계값
+      Serial.println("Mission Success");
+      missionInProgress = false;
+      digitalWrite(blueLEDPin, LOW);
+      noTone(bluePiezoPin); // 피에조 스피커 소리 끄기
+      consecutiveSuccessCount++;
+      if (consecutiveSuccessCount >= 10) { // 10회 이상의 연속 성공이 발생한 경우
+        Serial.println("Real Mission Success");
+        consecutiveSuccessCount = 0; // 연속 성공 횟수 초기화
+        blinkLED(blueLEDPin); // 파란 LED 깜빡이기
+        realMissionComplete = true; // 모든 미션 종료
+      }
+      consecutiveFailCount = 0; // 연속 실패 횟수 초기화
+    }
+  } else if (digitalRead(redLEDPin) == HIGH) {
+    if (analogRead(pressureSensor1Pin) > 200) {
+      Serial.println("Mission Success");
+      missionInProgress = false;
+      digitalWrite(redLEDPin, LOW);
+      noTone(redPiezoPin); // 피에조 스피커 소리 끄기
+      consecutiveSuccessCount++;
+      if (consecutiveSuccessCount >= 10) { // 10회 이상의 연속 성공이 발생한 경우
+        consecutiveSuccessCount = 0; // 연속 성공 횟수 초기화
+        blinkLED(blueLEDPin); // 파란 LED 깜빡이기
+        realMissionComplete = true; // 모든 미션 종료
+      }
+      consecutiveFailCount = 0; // 연속 실패 횟수 초기화
+    }
+  }
+}
+
+void blinkLED(int pin) {
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(pin, HIGH);
+    delay(100);
+    digitalWrite(pin, LOW);
+    delay(100);
+  }
+}
