@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 #include <DFRobotDFPlayerMini.h>
+#include <SoftwareSerial.h> // 이산화탄소 센서 라이브러리
+#include <MHZ19.h> // MH-Z19 라이브러리
+
 
 // 핀 정의
 const int blueLEDPin = 10;
@@ -85,6 +88,15 @@ void loop() {
   if (counter > 0) {
       executeMission();
     }
+
+  MHZ19_RESULT response = mhz.retrieveData();
+  if (response == MHZ19_RESULT_OK)
+  {
+    int co2 = mhz.getCO2(); // 이산화탄소 농도 측정
+
+    if (co2 > 3000)
+    Serial.print("n");
+  }
 }
   
 
