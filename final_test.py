@@ -33,7 +33,7 @@ def head_aspect_ratio(nose, jaw):
     return har
 
 # 각 부위별 기준 프레임, 기준 배수 (워드 파일 참조)
-EYE_AR_THRESH = 0.28
+EYE_AR_THRESH = 0.25
 EYE_AR_CONSEC_FRAMES = 48
 MOUTH_AR_THRESH = 2
 MOUTH_AR_CONSEC_FRAMES = 10
@@ -150,7 +150,7 @@ while True:
             if arduino.in_waiting > 0:
                 data = arduino.readline().decode('utf-8').strip()
                  if data == "n":
-                     EYE_AR_THRESH = 0.25
+                     EYE_AR_THRESH = 0.3
                      EYE_AR_CONSEC_FRAMES = 24
                      MOUTH_AR_THRESH = 1.8
                      MOUTH_AR_CONSEC_FRAMES = 8
